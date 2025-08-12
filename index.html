@@ -1,0 +1,98 @@
+<!DOCTYPE html><html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Futurist Lo-Fi Audio Player</title>
+<style>
+  body {
+    background: radial-gradient(circle at center, #0f2027, #203a43, #2c5364);
+    color: #fff;
+    font-family: 'Orbitron', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    margin: 0;
+  }
+  h1 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+  }
+  .controls, .effects {
+    margin: 1rem;
+    display: flex;
+    gap: 1rem;
+  }
+  input[type="file"], button, select {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    color: white;
+  }
+  audio {
+    margin-top: 1rem;
+    width: 90%;
+  }
+</style>
+</head>
+<body>
+<h1>🔊 Futurist Lo‑Fi Audio Player</h1>
+<p>Paste YouTube link (audio/video) — currently works with local uploads only. Use a YT downloader to get MP3/MP4 and load it here.</p>
+<div class="controls">
+  <input type="file" id="fileInput" accept="audio/*,video/*">
+  <button id="exportBtn">Export MP3</button>
+</div>
+<div class="effects">
+  <select id="effectSelect">
+    <option value="none">No Effect</option>
+    <option value="lofi">Lo-Fi</option>
+    <option value="vinyl">Vinyl Crackle</option>
+    <option value="echo">Echo</option>
+  </select>
+</div>
+<audio id="audioPlayer" controls></audio>
+<script>
+let audioCtx, sourceNode, effectNodes = {};
+let currentEffect = 'none';
+let audioBuffer;function setupAudioChain() { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); sourceNode = audioCtx.createBufferSource(); effectNodes.gain = audioCtx.createGain(); effectNodes.gain.gain.value = 1;
+
+effectNodes.lofi = audioCtx.createBiquadFilter(); effectNodes.lofi.type = 'lowpass'; effectNodes.lofi.frequency.value = 8000;
+
+effectNodes.vinyl = audioCtx.createBufferSource(); fetch('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3') // placeholder crackle sample .then(r => r.arrayBuffer()) .then(buf => audioCtx.decodeAudioData(buf)) .then(decoded => { effectNodes.vinyl.buffer = decoded; effectNodes.vinyl.loop = true; });
+
+effectNodes.echo = audioCtx.createDelay(5.0); effectNodes.echo.delayTime.value = 0.25;
+
+sourceNode.connect(effectNodes.gain).connect(audioCtx.destination); }
+
+function applyEffect(effect) { currentEffect = effect; if (!sourceNode) return; sourceNode.disconnect(); switch(effect) { case 'lofi': sourceNode.connect(effectNodes.lofi).connect(audioCtx.destination); break; case 'vinyl': sourceNode.connect(effectNodes.gain).connect(audioCtx.destination); if (effectNodes.vinyl) effectNodes.vinyl.start(); break; case 'echo': sourceNode.connect(effectNodes.echo).connect(audioCtx.destination); break; default: sourceNode.connect(audioCtx.destination); } }
+
+document.getElementById('fileInput').addEventListener('change', e => { const file = e.target.files[0]; if (!file) return; const url = URL.createObjectURL(file); const audioPlayer = document.getElementById('audioPlayer'); audioPlayer.src = url;
+
+const reader = new FileReader(); reader.onload = ev => { if (!audioCtx) setupAudioChain(); audioCtx.decodeAudioData(ev.target.result).then(buffer => { audioBuffer = buffer; }); }; reader.readAsArrayBuffer(file); });
+
+document.getElementById('effectSelect').addEventListener('change', e => { applyEffect(e.target.value); });
+
+document.getElementById('exportBtn').addEventListener('click', () => { if (!audioBuffer) return alert('No audio loaded'); const offlineCtx = new OfflineAudioContext(2, audioBuffer.length, audioBuffer.sampleRate); const source = offlineCtx.createBufferSource(); source.buffer = audioBuffer; source.connect(offlineCtx.destination); source.start(); offlineCtx.startRendering().then(renderedBuffer => { const wav = audioBufferToWav(renderedBuffer); const blob = new Blob([new DataView(wav)], { type: 'audio/wav' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'exported.mp3'; a.click(); }); });
+
+function audioBufferToWav(buffer) { let numOfChan = buffer.numberOfChannels, length = buffer.length * numOfChan * 2 + 44, bufferArray = new ArrayBuffer(length), view = new DataView(bufferArray), channels = [], i, sample, offset = 0, pos = 0;
+
+setUint32(0x46464952); // "RIFF" setUint32(length - 8); setUint32(0x45564157); // "WAVE"
+
+setUint32(0x20746d66); // "fmt " setUint32(16); setUint16(1); setUint16(numOfChan); setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16);
+
+setUint32(0x61746164); // "data" setUint32(length - pos - 4);
+
+for(i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
+
+while(pos < length) { for(i = 0; i < numOfChan; i++) { sample = Math.max(-1, Math.min(1, channels[i][offset])); sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767); view.setInt16(pos, sample, true); pos += 2; } offset++; }
+
+return bufferArray;
+
+function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+
+function setUint32(data) { view.setUint32(pos, data, true); pos += 4; } } </script>
+
+</body>
+</html>
